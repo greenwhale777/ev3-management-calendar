@@ -1,0 +1,17 @@
+{
+  "name": "ev3-management-calendar",
+  "version": "1.0.0",
+  "description": "EV3 관리 일정 알림봇 - 세금/급여/보험/계약 일정 텔레그램 알림",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.0"
+  }
+}
