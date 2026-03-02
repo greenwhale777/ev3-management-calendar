@@ -5,7 +5,7 @@
 
 const cron = require('node-cron');
 const https = require('https');
-const { sendTelegramMessage, formatDayBeforeMessage, formatOnDayMessage } = require('./management-telegram');
+const { sendTelegramMessage, formatDayBeforeMessage, formatOnDayMessage, formatMonthBeforeMessage } = require('./management-telegram');
 
 // KST 날짜 가져오기
 function getKSTDate() {
@@ -102,10 +102,18 @@ async function checkAndNotify(pool, isTest = false) {
     'SELECT * FROM management_schedules WHERE is_active = true'
   );
 
+  const thirtyDaysLater = new Date(today);
+  thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+
+  const monthBeforeSchedules = [];
   const dayBeforeSchedules = [];
   const onDaySchedules = [];
 
   for (const schedule of schedules) {
+    // D-30 알림 체크 (30일 후가 일정일이고 D-30 알림 활성)
+    if (schedule.notify_month_before && isScheduleDay(schedule, thirtyDaysLater)) {
+      monthBeforeSchedules.push(schedule);
+    }
     // D-1 알림 체크 (내일이 일정일이고 D-1 알림 활성)
     if (schedule.notify_day_before && isScheduleDay(schedule, tomorrow)) {
       dayBeforeSchedules.push(schedule);
@@ -116,8 +124,37 @@ async function checkAndNotify(pool, isTest = false) {
     }
   }
 
+  let monthBeforeCount = 0;
   let dayBeforeCount = 0;
   let onDayCount = 0;
+
+  // D-30 알림 발송
+  if (monthBeforeSchedules.length > 0) {
+    try {
+      const message = formatMonthBeforeMessage(monthBeforeSchedules, isTest);
+      await sendTelegramMessage(message);
+      monthBeforeCount = monthBeforeSchedules.length;
+
+      for (const s of monthBeforeSchedules) {
+        await pool.query(`
+          INSERT INTO management_notification_logs
+            (schedule_id, notification_type, title, category, status, message)
+          VALUES ($1, 'month_before', $2, $3, 'SUCCESS', $4)
+        `, [s.id, s.title, s.category, isTest ? '[테스트] D-30 알림 발송' : 'D-30 알림 발송']);
+      }
+
+      console.log(`📤 D-30 알림 ${monthBeforeCount}건 발송 완료`);
+    } catch (error) {
+      console.error('D-30 알림 발송 실패:', error.message);
+      for (const s of monthBeforeSchedules) {
+        await pool.query(`
+          INSERT INTO management_notification_logs
+            (schedule_id, notification_type, title, category, status, error_message)
+          VALUES ($1, 'month_before', $2, $3, 'ERROR', $4)
+        `, [s.id, s.title, s.category, error.message]);
+      }
+    }
+  }
 
   // D-1 알림 발송
   if (dayBeforeSchedules.length > 0) {
@@ -189,18 +226,18 @@ async function checkAndNotify(pool, isTest = false) {
   }
 
   // EV0 통합 로그 기록
-  const totalCount = dayBeforeCount + onDayCount;
+  const totalCount = monthBeforeCount + dayBeforeCount + onDayCount;
   if (totalCount > 0 || !isTest) {
-    const logMessage = `일정 알림 발송: ${totalCount}건 (D-1: ${dayBeforeCount}건, 당일: ${onDayCount}건)`;
+    const logMessage = `일정 알림 발송: ${totalCount}건 (D-30: ${monthBeforeCount}건, D-1: ${dayBeforeCount}건, 당일: ${onDayCount}건)`;
     logToEV0(
-      totalCount > 0 ? 'SUCCESS' : 'SUCCESS',
+      'SUCCESS',
       isTest ? `[테스트] ${logMessage}` : logMessage,
-      { dayBefore: dayBeforeCount, onDay: onDayCount, total: totalCount }
+      { monthBefore: monthBeforeCount, dayBefore: dayBeforeCount, onDay: onDayCount, total: totalCount }
     );
   }
 
-  console.log(`✅ 알림 체크 완료 (D-1: ${dayBeforeCount}건, 당일: ${onDayCount}건)`);
-  return { dayBefore: dayBeforeCount, onDay: onDayCount };
+  console.log(`✅ 알림 체크 완료 (D-30: ${monthBeforeCount}건, D-1: ${dayBeforeCount}건, 당일: ${onDayCount}건)`);
+  return { monthBefore: monthBeforeCount, dayBefore: dayBeforeCount, onDay: onDayCount };
 }
 
 // 스케줄러 시작

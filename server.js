@@ -63,6 +63,19 @@ async function initDB() {
       );
     `);
 
+    // notify_month_before 컬럼 추가 (D-30 알림)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'management_schedules' AND column_name = 'notify_month_before'
+        ) THEN
+          ALTER TABLE management_schedules ADD COLUMN notify_month_before BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+    `);
+
     // 인덱스 생성
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_schedules_active ON management_schedules(is_active);

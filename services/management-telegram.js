@@ -66,12 +66,34 @@ function formatOnDayMessage(schedules, isTest) {
   return msg;
 }
 
+// D-30 알림 메시지 포맷
+function formatMonthBeforeMessage(schedules, isTest) {
+  const prefix = isTest ? '[테스트] ' : '';
+  let msg = `📆 <b>${prefix}[D-30] 30일 전 일정 알림</b>\n━━━━━━━━━━━━━━\n`;
+
+  for (const s of schedules) {
+    msg += `\n📌 <b>${s.title}</b>\n`;
+    msg += `📅 ${formatRepeat(s)} (30일 후)\n`;
+    msg += `🏷️ ${CATEGORY_MAP[s.category] || CATEGORY_MAP.etc}\n`;
+    if (s.description) {
+      msg += `📝 ${s.description}\n`;
+    }
+    msg += `━━━━━━━━━━━━━━\n`;
+  }
+
+  msg += `\n📋 미리 준비하세요!`;
+  return msg;
+}
+
 // 텔레그램 메시지 발송
 function sendTelegramMessage(text) {
   return new Promise((resolve, reject) => {
     if (!BOT_TOKEN) {
+      console.error('❌ [텔레그램] BOT_TOKEN 미설정');
       return reject(new Error('MANAGEMENT_TELEGRAM_BOT_TOKEN이 설정되지 않았습니다'));
     }
+
+    console.log(`📤 [텔레그램] 발송 시작 - chat_id: ${CHAT_ID}, 토큰: ${BOT_TOKEN.slice(0, 10)}...`);
 
     const postData = JSON.stringify({
       chat_id: CHAT_ID,
@@ -89,24 +111,31 @@ function sendTelegramMessage(text) {
       }
     };
 
+    console.log(`📤 [텔레그램] 요청: POST https://api.telegram.org/bot${BOT_TOKEN.slice(0, 10)}..../sendMessage`);
+
     const req = https.request(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        console.log(`📥 [텔레그램] 응답 상태: ${res.statusCode}, 본문: ${data.slice(0, 200)}`);
         try {
           const result = JSON.parse(data);
           if (result.ok) {
+            console.log(`✅ [텔레그램] 발송 성공 - message_id: ${result.result?.message_id}`);
             resolve(result);
           } else {
+            console.error(`❌ [텔레그램] API 오류: ${result.error_code} - ${result.description}`);
             reject(new Error(`텔레그램 API 오류: ${result.description}`));
           }
         } catch (e) {
+          console.error(`❌ [텔레그램] 응답 파싱 실패:`, data);
           reject(new Error(`응답 파싱 오류: ${data}`));
         }
       });
     });
 
     req.on('error', (e) => {
+      console.error(`❌ [텔레그램] 네트워크 오류:`, e.message);
       reject(new Error(`텔레그램 요청 실패: ${e.message}`));
     });
 
@@ -119,5 +148,6 @@ module.exports = {
   CATEGORY_MAP,
   formatDayBeforeMessage,
   formatOnDayMessage,
+  formatMonthBeforeMessage,
   sendTelegramMessage
 };

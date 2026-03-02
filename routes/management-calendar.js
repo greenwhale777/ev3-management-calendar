@@ -139,7 +139,7 @@ module.exports = function (pool) {
   // POST / - 일정 추가
   router.post('/', async (req, res) => {
     try {
-      const { title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day } = req.body;
+      const { title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day, notify_month_before } = req.body;
 
       // 유효성 검증
       if (!title || !title.trim()) {
@@ -159,8 +159,8 @@ module.exports = function (pool) {
 
       const { rows } = await pool.query(`
         INSERT INTO management_schedules
-          (title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          (title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day, notify_month_before)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `, [
         title.trim(),
@@ -171,7 +171,8 @@ module.exports = function (pool) {
         specific_date || null,
         description || null,
         notify_day_before !== undefined ? notify_day_before : true,
-        notify_on_day !== undefined ? notify_on_day : true
+        notify_on_day !== undefined ? notify_on_day : true,
+        notify_month_before !== undefined ? notify_month_before : false
       ]);
 
       console.log(`📅 일정 추가: ${title}`);
@@ -185,16 +186,19 @@ module.exports = function (pool) {
   // POST /test-notify - 수동 알림 테스트
   router.post('/test-notify', async (req, res) => {
     try {
+      console.log('🧪 [테스트] 알림 테스트 시작');
       const { checkAndNotify } = require('../services/management-scheduler');
       const result = await checkAndNotify(pool, true);
+      console.log('🧪 [테스트] 알림 테스트 완료:', JSON.stringify(result));
       res.json({
         success: true,
         message: '테스트 알림 발송 완료',
+        monthBefore: result.monthBefore,
         dayBefore: result.dayBefore,
         onDay: result.onDay
       });
     } catch (error) {
-      console.error('테스트 알림 오류:', error);
+      console.error('🧪 [테스트] 알림 테스트 오류:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -203,7 +207,7 @@ module.exports = function (pool) {
   router.put('/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day } = req.body;
+      const { title, category, repeat_type, month, day, specific_date, description, notify_day_before, notify_on_day, notify_month_before } = req.body;
 
       // 유효성 검증
       if (title !== undefined && !title.trim()) {
@@ -232,8 +236,9 @@ module.exports = function (pool) {
           description = $7,
           notify_day_before = COALESCE($8, notify_day_before),
           notify_on_day = COALESCE($9, notify_on_day),
+          notify_month_before = COALESCE($10, notify_month_before),
           updated_at = NOW()
-        WHERE id = $10
+        WHERE id = $11
         RETURNING *
       `, [
         title ? title.trim() : null,
@@ -245,6 +250,7 @@ module.exports = function (pool) {
         description !== undefined ? description : null,
         notify_day_before,
         notify_on_day,
+        notify_month_before,
         id
       ]);
 
